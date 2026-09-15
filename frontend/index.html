@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Will it Rain on My Parade?</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Leaflet.js for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a; /* Fallback background */
+        }
+        #bg-video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: -1;
+            transition: opacity 1s ease-in-out;
+        }
+        .glass-card {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #map { height: 400px; border-radius: 0.5rem; background-color: #374151; }
+        .leaflet-pane { z-index: 10; }
+        .leaflet-top, .leaflet-bottom { z-index: 20; }
+        .metric-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s, border-color 0.5s, box-shadow 0.5s;
+        }
+        .metric-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .chart-container {
+            position: relative;
+            height: 250px;
+            background-color: rgba(0,0,0,0.2);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+        .icon-container {
+             height: 50px;
+             width: 50px;
+             margin: 0 auto 8px;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             overflow: hidden;
+             border-radius: 0.5rem;
+        }
+        .icon-video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen flex items-center justify-center p-4">
+
+    <video id="bg-video" autoplay loop muted playsinline></video>
+
+    <div class="w-full max-w-5xl mx-auto">
+        <div class="glass-card rounded-2xl shadow-2xl p-6 md:p-8">
+
+            <header class="mb-6 text-center">
+                <h1 class="text-4xl md:text-5xl font-bold tracking-tight">Will it Rain on My Parade?</h1>
+                <p class="text-lg md:text-xl text-gray-300 mt-2">Long-range probabilistic weather forecasts powered by NASA data.</p>
+            </header>
+
+            <!-- Input Section -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="md:col-span-2">
+                    <label class="block text-left text-sm font-medium text-gray-300 mb-1">Location</label>
+                    <div class="flex items-center bg-gray-700/50 border border-gray-600 rounded-lg p-1">
+                        <input type="text" id="locationText" class="flex-grow bg-transparent text-white px-3 focus:outline-none" placeholder="Or type a location name...">
+                        <button id="mapBtn" class="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md transition">Choose on Map</button>
+                    </div>
+                </div>
+                <div>
+                    <label for="date" class="block text-left text-sm font-medium text-gray-300 mb-1">Date</label>
+                    <input type="date" id="date" class="w-full bg-gray-700/50 border border-gray-600 rounded-lg py-3 px-4 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                </div>
+            </div>
+
+            <button id="predictBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105 shadow-lg w-full md:w-auto mx-auto block">
+                Predict Weather
+            </button>
+
+            <div id="messageArea" class="mt-4 text-center text-red-400 font-semibold"></div>
+
+            <div id="results" class="mt-8 min-h-[300px] flex items-center justify-center p-4 bg-gray-800/30 rounded-xl" style="display: none;">
+                <div id="loader" class="text-center">
+                    <svg class="animate-spin h-8 w-8 text-white mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-2 text-gray-400">Contacting backend server...</p>
+                </div>
+
+                <div id="forecastContent" class="hidden w-full">
+                    <div class="text-center mb-4">
+                        <h2 class="text-2xl font-semibold text-gray-200" id="resultLocation"></h2>
+                        <p class="text-lg text-gray-400" id="resultDate"></p>
+                    </div>
+                    <div id="quirkyMessageContainer" class="text-center mb-4 p-3 bg-indigo-500/20 rounded-lg">
+                        <p id="quirkyMessage" class="text-lg text-indigo-200 italic"></p>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6 text-center">
+                        <div id="rainCard" class="metric-card p-4 rounded-lg"> <div class="icon-container"><video id="rainVideo" class="icon-video" autoplay loop muted playsinline></video></div><div class="font-bold text-lg" id="rainChance">0%</div><div class="text-xs text-gray-400">Rain</div> </div>
+                        <div id="snowCard" class="metric-card p-4 rounded-lg"> <div class="icon-container"><video id="snowVideo" class="icon-video" autoplay loop muted playsinline></video></div><div class="font-bold text-lg" id="snowChance">0%</div><div class="text-xs text-gray-400">Snow</div> </div>
+                        <div id="heatCard" class="metric-card p-4 rounded-lg"> <div class="icon-container"><video id="heatVideo" class="icon-video" autoplay loop muted playsinline></video></div><div class="font-bold text-lg" id="heatIndex">0°C</div><div class="text-xs text-gray-400">Heat</div> </div>
+                        <div id="humidityCard" class="metric-card p-4 rounded-lg"> <div class="icon-container"><video id="humidityVideo" class="icon-video" autoplay loop muted playsinline></video></div><div class="font-bold text-lg" id="humidity">0%</div><div class="text-xs text-gray-400">Humidity</div> </div>
+                        <div id="windCard" class="metric-card p-4 rounded-lg"> <div class="icon-container"><video id="windVideo" class="icon-video" autoplay loop muted playsinline></video></div><div class="font-bold text-lg" id="windSpeed">0km/h</div><div class="text-xs text-gray-400">Wind</div> </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                        <div class="chart-container"><canvas id="precipitationChart"></canvas></div>
+                        <div class="chart-container"><canvas id="tempChart"></canvas></div>
+                        <div class="chart-container"><canvas id="humidityChart"></canvas></div>
+                        <div class="chart-container"><canvas id="windChart"></canvas></div>
+                    </div>
+
+                    <div id="downloadButtons" class="mt-6 text-center">
+                         <button id="downloadJson" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-5 rounded-lg transition mr-4">Download .json</button>
+                         <button id="downloadCsv" class="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-5 rounded-lg transition">Download .csv</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="mapModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl">
+            <h3 class="text-xl font-bold mb-4">Select a Location</h3>
+            <div id="map"></div>
+            <div class="flex justify-end gap-4 mt-4">
+                <button id="cancelMap" class="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md transition">Cancel</button>
+                <button id="confirmMap" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const bgVideo = document.getElementById('bg-video');
+        const predictBtn = document.getElementById('predictBtn');
+        const resultsDiv = document.getElementById('results');
+        const loader = document.getElementById('loader');
+        const forecastContent = document.getElementById('forecastContent');
+        const mapBtn = document.getElementById('mapBtn');
+        const mapModal = document.getElementById('mapModal');
+        const locationTextInput = document.getElementById('locationText');
+
+        // --- State Variables ---
+        let charts = {};
+        let map = null, marker = null, selectedCoords = null;
+        let lastPredictionData = {};
+
+        const chartDefaultOptions = {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, ticks: { color: '#9CA3AF' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                x: { ticks: { color: '#9CA3AF' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+            },
+            plugins: { legend: { labels: { color: '#D1D5DB' } } }
+        };
+
+        // Set initial background video
+        window.onload = () => {
+             bgVideo.src = "weather.mp4"; // Replace with your default background video
+        }
+
+
+        // --- Map Logic ---
+        function initMap() {
+            map = L.map('map').setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+            map.on('click', e => {
+                if (marker) map.removeLayer(marker);
+                marker = L.marker(e.latlng).addTo(map);
+                selectedCoords = e.latlng;
+            });
+        }
+
+        mapBtn.addEventListener('click', () => {
+            mapModal.classList.remove('hidden');
+            if (!map) initMap();
+            setTimeout(() => map.invalidateSize(), 10);
+        });
+
+        document.getElementById('cancelMap').addEventListener('click', () => mapModal.classList.add('hidden'));
+        document.getElementById('confirmMap').addEventListener('click', () => {
+            if (selectedCoords) locationTextInput.value = `Lat: ${selectedCoords.lat.toFixed(2)}, Lon: ${selectedCoords.lng.toFixed(2)}`;
+            mapModal.classList.add('hidden');
+        });
+
+        // --- Prediction Logic ---
+        predictBtn.addEventListener('click', async () => {
+            const location = locationTextInput.value, date = document.getElementById('date').value;
+            const messageArea = document.getElementById('messageArea');
+            messageArea.textContent = '';
+            if (!location || !date) { messageArea.textContent = "Please select a location and a date."; return; }
+
+            resultsDiv.style.display = 'flex';
+            loader.style.display = 'block';
+            forecastContent.classList.add('hidden');
+
+            try {
+                // *** UPDATED LINE: Port changed from 5000 to 8000 for Django ***
+                const response = await fetch(`http://127.0.0.1:8000/predict?location=${encodeURIComponent(location)}&date=${encodeURIComponent(date)}`);
+                if (!response.ok) throw new Error((await response.json()).error || `HTTP error! Status: ${response.status}`);
+                displayResults(await response.json());
+            } catch (error) {
+                loader.style.display = 'none';
+                messageArea.textContent = `Error: ${error.message}. Please check the console.`;
+            }
+        });
+
+        function displayResults(data) {
+            loader.style.display = 'none';
+            forecastContent.classList.remove('hidden');
+            const { prediction } = data;
+            lastPredictionData = data;
+
+            document.getElementById('resultLocation').textContent = data.location;
+            document.getElementById('resultDate').textContent = new Date(data.date).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+            document.getElementById('quirkyMessage').textContent = getQuirkyMessage(prediction, data.location);
+
+            updateDynamicBackground(prediction);
+            applyMetricThemes(prediction);
+            updateVideoIcons(prediction);
+
+            animateCountUp(document.getElementById('rainChance'), prediction.rainChance, '%');
+            animateCountUp(document.getElementById('snowChance'), prediction.snowChance, '%');
+            animateCountUp(document.getElementById('heatIndex'), prediction.heatIndexC, '°C');
+            animateCountUp(document.getElementById('humidity'), prediction.humidity, '%');
+            animateCountUp(document.getElementById('windSpeed'), prediction.windSpeedKmh, 'km/h');
+
+            renderAllCharts(data.historicalData);
+        }
+
+        // --- Visual Enhancement Functions ---
+        function getQuirkyMessage(prediction, locationName) {
+            const { rainChance, heatIndexC, snowChance, humidityIndexC, windSpeedKmh } = prediction;
+            const lowerLocation = locationName.toLowerCase();
+
+            if (snowChance > 30) return "Get your snow boots ready! It's going to be a winter wonderland.";
+            if (rainChance > 70) return "It's not rain, it's liquid sunshine! But yeah... bring an ark.";
+            if (rainChance > 40) return "Looks like the clouds are planning something. Don't forget your umbrella!";
+            if(rainChance > 20) return "A few sprinkles here and there. Perfect weather for a cozy day indoors.";
+            if (humidityIndexC > 70) return "It's a bit humid out there. Make sure to pack a light jacket!";
+            if (humidityIndexC < 30) return "It's a dry day! Perfect for flying kites or... just staying hydrated.";
+            if (windSpeedKmh > 30) return "Hold onto your hats! It's going to be a breezy day.";
+            if (windSpeedKmh > 20) return "A bit windy today. Great for sailing or flying a kite!";
+            if (windSpeedKmh < 10) return "Calm winds today. Perfect for a leisurely stroll.";
+            if (heatIndexC > 28) return "It's getting warm! Perfect weather for ice cream and beach vibes.";
+            if (heatIndexC > 35) return "Hotter than a pepper sprout! Stay hydrated and find some shade.";
+            if (heatIndexC > 28) {
+                if (lowerLocation.includes('beach') || lowerLocation.includes('coast')) {
+                    return "Perfect beach day! Time to work on that tan.";
+                }
+                return "A beautiful day for a picnic or... you know... a parade! Don't forget the sunscreen!";
+            }
+            if (heatIndexC < 5) return "Brrr! Colder than a polar bear's toenails. Bundle up!";
+
+            return "Looks like a perfectly average day. Go make it an amazing one!";
+        }
+
+        function animateCountUp(element, end, unit) {
+            const duration = 1500;
+            let start = 0;
+            const step = (timestamp) => {
+                if (!start) start = timestamp;
+                const progress = Math.min((timestamp - start) / duration, 1);
+                element.textContent = `${Math.floor(progress * end)}${unit}`;
+                if (progress < 1) window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function updateDynamicBackground({ rainChance, snowChance, heatIndexC, windSpeedKmh }) {
+            let newSrc = "default.mp4"; // Replace with your default background video
+
+            if (snowChance > 30) {
+                newSrc = "snow_bg.mp4"; // Replace with your snow background video
+            } else if (rainChance > 50) {
+                newSrc = "rain_bg.mp4"; // This will now point to your rain video.
+            } else if (windSpeedKmh > 20) {
+                newSrc = "wind_bg.mp4"; // Replace with your wind background video
+            } else if (heatIndexC > 30) {
+                 newSrc = "sunny_bg.mp4"; // Replace with your sunny background video
+            } else if (heatIndexC < 10) {
+                newSrc = "snow_bg.mp4"; // Replace with your cold background video
+            }
+
+            // Only change the source if it's different to prevent flickering
+            if (bgVideo.currentSrc.indexOf(newSrc) === -1) {
+                bgVideo.src = newSrc;
+            }
+        }
+
+        function applyMetricThemes(prediction) {
+            const themeCard = (cardId, color) => {
+                const card = document.getElementById(cardId);
+                card.style.borderColor = color;
+                card.style.boxShadow = `0 0 15px ${color}`;
+            };
+            ['rainCard', 'snowCard', 'heatCard', 'humidityCard', 'windCard'].forEach(id => {
+                document.getElementById(id).style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                document.getElementById(id).style.boxShadow = 'none';
+            });
+            if (prediction.rainChance > 50) themeCard('rainCard', '#3b82f6');
+            if (prediction.snowChance > 20) themeCard('snowCard', '#e5e7eb');
+            if (prediction.heatIndexC > 30) themeCard('heatCard', '#f97316'); else if (prediction.heatIndexC < 5) themeCard('heatCard', '#60a5fa');
+            if (prediction.humidity > 70) themeCard('humidityCard', '#10b981');
+            if (prediction.windSpeedKmh > 25) themeCard('windCard', '#6b7280');
+        }
+
+        function updateVideoIcons(prediction) {
+            const videos = {
+                rain: document.getElementById('rainVideo'),
+                snow: document.getElementById('snowVideo'),
+                heat: document.getElementById('heatVideo'),
+                humidity: document.getElementById('humidityVideo'),
+                wind: document.getElementById('windVideo')
+            };
+
+            videos.rain.src = "rain.mp4";
+            videos.snow.src = "snow.mp4";
+            videos.heat.src = "heat.mp4";
+            videos.humidity.src = "humidity.mp4";
+            videos.wind.src = "wind.mp4";
+
+            Object.values(videos).forEach(v => v.play());
+        }
+
+        // --- Chart Rendering & Interaction ---
+        function renderAllCharts(historicalData) {
+            Object.values(charts).forEach(chart => chart.destroy());
+            const labels = historicalData.map(d => d.year);
+            const chartIds = ['precipitationChart', 'tempChart', 'humidityChart', 'windChart'];
+            const datasets = [
+                { label: 'Precipitation (mm)', data: historicalData.map(d => d.precipitation_mm), backgroundColor: historicalData.map(d => d.is_snow_day ? '#cbd5e1' : '#3b82f6'), type: 'bar' },
+                { label: 'Max Temp (°C)', data: historicalData.map(d => d.max_temp_c), borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.2)', type: 'line', fill: true },
+                { label: 'Humidity (%)', data: historicalData.map(d => d.humidity_percent), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.2)', type: 'line', fill: true },
+                { label: 'Wind Speed (km/h)', data: historicalData.map(d => d.wind_speed_kmh), borderColor: '#6b7280', backgroundColor: 'rgba(107, 114, 128, 0.2)', type: 'line', fill: true }
+            ];
+
+            chartIds.forEach((id, i) => {
+                const ctx = document.getElementById(id).getContext('2d');
+                charts[id] = new Chart(ctx, {
+                    type: datasets[i].type,
+                    data: { labels, datasets: [datasets[i]] },
+                    options: { ...chartDefaultOptions,
+                        onHover: (event, chartElement) => {
+                            if (chartElement.length) highlightCharts(chartElement[0].index); else resetChartHighlights();
+                        }
+                    }
+                });
+            });
+        }
+
+        function highlightCharts(index) {
+            Object.values(charts).forEach(chart => {
+                chart.data.datasets.forEach(dataset => {
+                    const highlightColor = dataset.type === 'bar' ? '#f59e0b' : 'rgba(245, 158, 11, 0.5)';
+                    if (Array.isArray(dataset.backgroundColor)) dataset.backgroundColor[index] = highlightColor;
+                    if (Array.isArray(dataset.borderColor)) dataset.borderColor[index] = '#f59e0b';
+                });
+                chart.update('none');
+            });
+        }
+
+        function resetChartHighlights() {
+             if (!lastPredictionData.historicalData) return;
+            const originalColors = {
+                precipitationChart: lastPredictionData.historicalData.map(d => d.is_snow_day ? '#cbd5e1' : '#3b82f6'),
+                tempChart: 'rgba(239, 68, 68, 0.2)',
+                humidityChart: 'rgba(16, 185, 129, 0.2)',
+                windChart: 'rgba(107, 114, 128, 0.2)',
+            };
+            const originalBorders = { tempChart: '#ef4444', humidityChart: '#10b981', windChart: '#6b7280', precipitationChart: '#3b82f6' };
+
+            Object.entries(charts).forEach(([id, chart]) => {
+                chart.data.datasets.forEach(dataset => {
+                    if (dataset.type === 'bar') {
+                        dataset.backgroundColor = [...originalColors[id]];
+                        dataset.borderColor = Array(chart.data.labels.length).fill(originalBorders[id]);
+                    } else {
+                        dataset.backgroundColor = Array(chart.data.labels.length).fill(originalColors[id]);
+                        dataset.borderColor = Array(chart.data.labels.length).fill(originalBorders[id]);
+                    }
+                });
+                chart.update('none');
+            });
+        }
+
+        // --- Download Logic ---
+        document.getElementById('downloadJson').addEventListener('click', () => {
+            if (!lastPredictionData.date) return;
+            downloadFile(`weather_report_${lastPredictionData.date}.json`, JSON.stringify(lastPredictionData, null, 2), 'application/json');
+        });
+        document.getElementById('downloadCsv').addEventListener('click', () => {
+            if (!lastPredictionData.date) return;
+            let csv = 'year,precipitation_mm,max_temp_c,humidity_percent,wind_speed_kmh,is_snow_day\n';
+            lastPredictionData.historicalData.forEach(r => { csv += `${r.year},${r.precipitation_mm},${r.max_temp_c},${r.humidity_percent},${r.wind_speed_kmh},${r.is_snow_day}\n`; });
+            downloadFile(`historical_data_${lastPredictionData.date}.csv`, csv, 'text/csv');
+        });
+        function downloadFile(filename, content, mimeType) {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([content], { type: mimeType }));
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
+
