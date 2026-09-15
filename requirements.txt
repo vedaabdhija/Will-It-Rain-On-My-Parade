@@ -1,0 +1,5 @@
+django
+django-cors-headers
+requests
+xarray
+netCDF4
