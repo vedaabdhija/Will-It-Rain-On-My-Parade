@@ -1,4 +1,3 @@
-````markdown
 # 🌦️ Will It Rain On My Parade?
 
 ### Probabilistic Weather Prediction Using NASA Earth Observation Data
